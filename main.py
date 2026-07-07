@@ -1,7 +1,7 @@
- aniqroq ko'rish uchun
+ko'rish uchun
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-TOKEN = os.environ.get("TOKEN")
+TOKEN = os.environ.get("8842256743:AAEwjIF30_fPyLPfCTrVl6dhAkThkYWMxZY")
 
 async def start(update, context):
     await update.message.reply_text('Bot ishga tushdi! Musiqa nomini yozing.')
