@@ -1,4 +1,6 @@
-git push
+python-telegram-bot
+yt-dlp
+
 
 
 
