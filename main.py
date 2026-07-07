@@ -1,26 +1,27 @@
 import os
-import asyncio
+import logging
 from telegram.ext import ApplicationBuilder, CommandHandler
 
-# Tokenni Render muhitidan oladi
+# Loglarni yoqish (xatolarni ko'rish uchun)
+logging.basicConfig(level=logging.INFO)
+
 TOKEN = os.environ.get("TOKEN")
 
 async def start(update, context):
     await update.message.reply_text('Salom! Bot ishlamoqda!')
 
-async def main():
+if __name__ == '__main__':
     if not TOKEN:
         print("Xatolik: TOKEN topilmadi!")
-        return
-    
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    
-    print("Bot ishga tushdi...")
-    await app.run_polling()
-
-if __name__ == '__main__':
-    asyncio.run(main())
+    else:
+        # Yangi versiya uchun ApplicationBuilder
+        app = ApplicationBuilder().token(TOKEN).build()
+        app.add_handler(CommandHandler("start", start))
+        
+        print("Bot ishga tushdi...")
+        # Polling usuli bilan ishga tushirish
+        app.run_polling()
+        
     
     
     
