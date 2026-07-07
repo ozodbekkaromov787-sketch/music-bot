@@ -1,8 +1,4 @@
-import os
-import logging
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
-
-# Loglarni aniqroq ko'rish uchun
+ aniqroq ko'rish uchun
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 TOKEN = os.environ.get("TOKEN")
@@ -24,4 +20,4 @@ if __name__ == '__main__':
         
         print("Bot ishga tushdi!")
         app.run_polling()
-        
+
