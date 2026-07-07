@@ -1,5 +1,4 @@
-import os
-import logging
+logging
 from telegram.ext import ApplicationBuilder, MessageHandler, filters
 import yt_dlp
 
