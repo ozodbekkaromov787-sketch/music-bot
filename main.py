@@ -1,5 +1,4 @@
-quiet': False, 
-        'no_warnings': False
+no_warnings': False
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
