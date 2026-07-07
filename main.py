@@ -1,7 +1,4 @@
-False qilib, loglarda xatolikni ko'rishimiz mumkin
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'default_search': 'ytsearch1',
+': 'ytsearch1',
         'quiet': False, 
         'no_warnings': False
     }
