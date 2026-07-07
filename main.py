@@ -1,5 +1,4 @@
-import os
-from telegram.ext import ApplicationBuilder, CommandHandler
+import ApplicationBuilder, CommandHandler
 
 TOKEN = os.environ.get("TOKEN")
 
@@ -19,4 +18,4 @@ if __name__ == '__main__':
     
     
     
-  
+
