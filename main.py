@@ -1,5 +1,4 @@
-def search_yt(query):
-    # 'quiet': False qilib, loglarda xatolikni ko'rishimiz mumkin
+': False qilib, loglarda xatolikni ko'rishimiz mumkin
     ydl_opts = {
         'format': 'bestaudio/best',
         'default_search': 'ytsearch1',
@@ -17,4 +16,5 @@ def search_yt(query):
         except Exception as e:
             print(f"Xatolik: {e}") # Render loglarida xatoni ko'rsatadi
             return None, str(e)
+
             
