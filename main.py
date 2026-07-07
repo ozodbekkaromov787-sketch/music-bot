@@ -1,21 +1,27 @@
-import ApplicationBuilder, CommandHandler
+import os
+import logging
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
+
+# Loglarni aniqroq ko'rish uchun
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 TOKEN = os.environ.get("TOKEN")
 
 async def start(update, context):
-    await update.message.reply_text('Bot ishlamoqda!')
+    await update.message.reply_text('Bot ishga tushdi! Musiqa nomini yozing.')
+
+async def echo(update, context):
+    # Hozircha shunchaki yozgan narsangizni qaytaradi
+    await update.message.reply_text(f"Siz yozdingiz: {update.message.text}")
 
 if __name__ == '__main__':
-    # drop_pending_updates=True eski so'rovlarni o'chirib tashlaydi
-    app = ApplicationBuilder().token(TOKEN).concurrent_updates(True).build()
-    app.add_handler(CommandHandler("start", start))
-    
-    print("Bot ishga tushdi...")
-    # drop_pending_updates=True bu yerda juda muhim
-    app.run_polling(drop_pending_updates=True)
-    
+    if not TOKEN:
+        print("TOKEN topilmadi!")
+    else:
+        app = ApplicationBuilder().token(TOKEN).build()
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
         
-    
-    
-    
-
+        print("Bot ishga tushdi!")
+        app.run_polling()
+        
