@@ -1,23 +1,21 @@
-ko'rish uchun
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+import os
+import logging
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
+import yt_dlp
 
-TOKEN = os.environ.get("8842256743:AAEwjIF30_fPyLPfCTrVl6dhAkThkYWMxZY")
+logging.basicConfig(level=logging.INFO)
 
 async def start(update, context):
-    await update.message.reply_text('Bot ishga tushdi! Musiqa nomini yozing.')
+    await update.message.reply_text("Salom! Musiqa nomini yozing.")
 
 async def echo(update, context):
-    # Hozircha shunchaki yozgan narsangizni qaytaradi
-    await update.message.reply_text(f"Siz yozdingiz: {update.message.text}")
+    # Bu yerda qidiruv funksiyasi ishlaydi
+    await update.message.reply_text("Qidirilmoqda...")
 
 if __name__ == '__main__':
-    if not TOKEN:
-        print("TOKEN topilmadi!")
-    else:
-        app = ApplicationBuilder().token(TOKEN).build()
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
-        
-        print("Bot ishga tushdi!")
-        app.run_polling()
-
+    token = os.environ.get("TOKEN")
+    app = ApplicationBuilder().token(token).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), echo))
+    app.run_polling()
+    
