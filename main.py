@@ -1,5 +1,4 @@
-telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-import yt_dlp
+yt_dlp
 
 # Loglarni sozlash
 logging.basicConfig(
