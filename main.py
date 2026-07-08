@@ -1,4 +1,4 @@
-import os
+os
 import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -56,4 +56,4 @@ if __name__ == '__main__':
 
     print("Bot muvaffaqiyatli ishga tushdi!")
     app.run_polling()
-    
+
