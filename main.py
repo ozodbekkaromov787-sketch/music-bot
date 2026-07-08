@@ -1,29 +1,31 @@
-
-import logging
 import os
-from telegram.ext import ApplicationBuilder, MessageHandler, filters
-import yt_dlp
-logging.basicConfig(level=logging.INFO)
-def search_yt(query):
-ydl_opts = {'format': 'bestaudio', 'default_search': 'ytsearch', 'quiet': True}
-with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-try:
-info = ydl.extract_info(query, download=False)
-video = info['entries'][0]
-return video['webpage_url'], video['title']
-except Exception as e:
-logging.error(f"YouTube'dan izlashda xatolik: {e}")
-return None, None
-async def find_song(update, context):
-query = update.message.text
-await update.message.reply_text("Qidirilmoqda...")
-url, title = search_yt(query)
-if url:
-await update.message.reply_text(f"Topildi: {title}\n{url}")
-else:
-await update.message.reply_text("Hech narsa topilmadi yoki xatolik yuz berdi.")
-if name == 'main':
-token = os.environ.get("TOKEN")
-application = ApplicationBuilder().token(token).build()
-application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), find_song))
-application.run_polling()
+import logging
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+
+# Logging sozlamalari
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
+# Token muhit o'zgaruvchisidan olinadi (yoki qo'shtirnoq ichiga o'zingiznikini qo'ying)
+TOKEN = os.environ.get("TOKEN", "8842256743:AAEkul6BCTC0HtrGqfZ47gRAk2JkeogEgdY")
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Salom! Musiqa botiga xush kelibsiz! Musiqa nomini yuboring.")
+
+async def echo_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text
+    await update.message.reply_text(f"Qidirilmoqda: {user_text}")
+
+if __name__ == '__main__':
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    # Xabar va buyruqlarni ro'yxatdan o'tkazish
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo_message))
+
+    print("Bot muvaffaqiyatli ishga tushdi!")
+    app.run_polling()
+  
