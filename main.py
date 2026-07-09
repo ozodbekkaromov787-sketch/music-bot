@@ -1,11 +1,12 @@
 import os
+import json
 import logging
-import requests
-import yt_dlp
+import urllib.request
+import urllib.parse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
-# Loglarni sozlash
+# Log sozlamalari
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
     level=logging.INFO
@@ -13,97 +14,65 @@ logging.basicConfig(
 
 TOKEN = os.environ.get("TOKEN", "8842256743:AAEkul6BCTC0HtrGqfZ47gRAk2JkeogEgdY")
 
-def search_youtube_full(query):
-    """YouTube orqali to'liq 10 ta musiqani qidirish va ma'lumotlarini olish"""
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'extract_flat': True,
-        'default_search': 'ytsearch10'
-    }
+def search_deezer_list(query):
+    """Musiqa nomidan 10 ta variant ro'yxatini olish"""
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=False)
-            entries = info.get('entries', [])
-            results = []
-            for entry in entries:
-                results.append({
-                    'id': entry.get('id'),
-                    'title': entry.get('title', 'Musiqa'),
-                    'uploader': entry.get('uploader', 'Noma\'lum'),
-                    'url': f"https://www.youtube.com/watch?v={entry.get('id')}"
-                })
-            return results
+        encoded_query = urllib.parse.quote(query)
+        url = f"https://api.deezer.com/search?q={encoded_query}&limit=10"
+        
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            return data.get('data', [])
     except Exception as e:
-        logging.error(f"YouTube qidiruv xatosi: {e}")
+        logging.error(f"Deezer qidiruv xatosi: {e}")
     return []
 
-def download_youtube_mp3(yt_url):
-    """YouTube video/musikasini to'liq MP3 formatida yuklab olish"""
-    out_filename = f"downloads/audio_{os.urandom(4).hex()}"
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': f"{out_filename}.%(ext)s",
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        'quiet': True,
-    }
-    
-    # Agar FFmpeg o'rnatilmagan bo'lsa, to'g'ridan-to'g'ri audio oqimini olamiz
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([yt_url])
-            return f"{out_filename}.mp3"
-    except Exception as e:
-        logging.error(f"yt-dlp yuklash xatosi: {e}")
-        
-    # Zaxira usul: Cobalt API orqali to'liq audio yuklash
-    return download_via_cobalt(yt_url, mode='audio')
-
-def download_via_cobalt(url, mode='video'):
-    """Cobalt API yordamida yuklab olish"""
+def download_via_cobalt(url, mode='audio'):
+    """Cobalt API orqali to'liq MP3 yoki MP4 yuklab olish"""
     try:
         cobalt_url = 'https://api.cobalt.tools/api/json'
-        payload = {
+        payload = json.dumps({
             'url': url,
             'downloadMode': 'audio' if mode == 'audio' else 'auto',
             'audioFormat': 'mp3'
-        }
+        }).encode('utf-8')
+        
         headers = {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
             'User-Agent': 'Mozilla/5.0'
         }
         
-        response = requests.post(cobalt_url, json=payload, headers=headers, timeout=25).json()
-        file_url = None
-        
-        if response.get('status') in ['redirect', 'stream']:
-            file_url = response.get('url')
-        elif response.get('status') == 'picker' and response.get('picker'):
-            file_url = response['picker'][0].get('url')
+        req = urllib.request.Request(cobalt_url, data=payload, headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=25) as response:
+            data = json.loads(response.read().decode())
             
-        if file_url:
-            ext = 'mp3' if mode == 'audio' else 'mp4'
-            filename = f"downloads/media_{os.urandom(4).hex()}.{ext}"
-            
-            res = requests.get(file_url, stream=True, timeout=90)
-            with open(filename, 'wb') as f:
-                for chunk in res.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            return filename
+            file_url = None
+            if data.get('status') in ['redirect', 'stream']:
+                file_url = data.get('url')
+            elif data.get('status') == 'picker' and data.get('picker'):
+                file_url = data['picker'][0].get('url')
+                
+            if file_url:
+                ext = 'mp3' if mode == 'audio' else 'mp4'
+                filename = f"downloads/media_{os.urandom(4).hex()}.{ext}"
+                
+                file_req = urllib.request.Request(file_url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(file_req, timeout=90) as res, open(filename, 'wb') as f:
+                    f.write(res.read())
+                        
+                return filename
     except Exception as e:
-        logging.error(f"Cobalt xatosi: {e}")
+        logging.error(f"Cobalt yuklashda xatolik: {e}")
+        
     return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🎵 **To'liq Musiqa va Video Yuklovchi Bot!**\n\n"
-        "1. **Qo'shiq nomini yozing** — to'liq versiyasini topib yuboraman.\n"
-        "2. **YouTube, Instagram, TikTok linkini yuboring** — MP3 yoki MP4 qilib yuklab beraman!",
+        "🎵 **Universal Musiqa va Video Bot!**\n\n"
+        "1. **Qo'shiq nomini yozing** — ro'yxatdan tanlab to'liq MP3 yuklab oling.\n"
+        "2. **YouTube, Instagram, TikTok linkini yuboring** — video yoki audio yuklab beraman!",
         parse_mode="Markdown"
     )
 
@@ -123,22 +92,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     # MUSIQA NOMI YOZILGANDA
     else:
-        status_msg = await update.message.reply_text(f"🔍 \"{text}\" bo'yicha to'liq musiqalar qidirilmoqda...")
-        tracks = search_youtube_full(text)
+        status_msg = await update.message.reply_text(f"🔍 \"{text}\" qidirilmoqda...")
+        tracks = search_deezer_list(text)
         
         if tracks:
-            msg_text = f"🔍 **\"{text}\"** bo'yicha topilgan to'liq musiqalar:\n\n"
+            msg_text = f"🔍 **\"{text}\"** bo'yicha topilgan musiqalar:\n\n"
             keyboard_row1 = []
             keyboard_row2 = []
             
-            # Ma'lumotlarni saqlab turamiz
+            # Ma'lumotlarni context'ga saqlash
             context.user_data['tracks'] = tracks
             
             for idx, track in enumerate(tracks, 1):
+                artist = track.get('artist', {}).get('name', 'Noma\'lum')
                 title = track.get('title', 'Musiqa')
-                msg_text += f"**{idx}.** {title}\n"
                 
-                btn = InlineKeyboardButton(str(idx), callback_data=f"dl_yt|{idx-1}")
+                msg_text += f"**{idx}.** {artist} - {title}\n"
+                
+                btn = InlineKeyboardButton(str(idx), callback_data=f"dl_tr|{idx-1}")
                 if idx <= 5:
                     keyboard_row1.append(btn)
                 else:
@@ -156,21 +127,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    
     data = query.data
     
-    # TO'LIQ MUSIQA TUGMASI BOSILGANDA
-    if data.startswith("dl_yt|"):
+    # MUSIQA TUGMASI BOSILGANDA (RO'YXATDAN)
+    if data.startswith("dl_tr|"):
         idx = int(data.split("|")[1])
         tracks = context.user_data.get('tracks', [])
         
         if idx < len(tracks):
             track = tracks[idx]
-            msg = await query.message.reply_text(f"📥 **{track['title']}** (To'liq versiya) yuklanmoqda...")
+            artist = track.get('artist', {}).get('name', 'Noma\'lum')
+            title = track.get('title', 'Musiqa')
+            
+            msg = await query.message.reply_text(f"📥 **{artist} - {title}** yuklanmoqda...")
             
             if not os.path.exists("downloads"):
                 os.makedirs("downloads")
                 
-            filepath = download_youtube_mp3(track['url'])
+            # YouTube/Search orqali Cobalt yordamida to'liq audio yuklash
+            search_query = f"https://www.youtube.com/results?search_query={urllib.parse.quote(artist + ' ' + title)}"
+            filepath = download_via_cobalt(search_query, mode='audio')
+            
+            # Agar izlash linki o'tmasa, to'g'ridan-to me'yordagi preview oqimidan foydalanadi
+            if not filepath or not os.path.exists(filepath):
+                mp3_url = track.get('preview')
+                if mp3_url:
+                    filepath = f"downloads/{artist} - {title}.mp3".replace('/', '_')
+                    file_req = urllib.request.Request(mp3_url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(file_req, timeout=30) as res, open(filepath, 'wb') as f:
+                        f.write(res.read())
             
             if filepath and os.path.exists(filepath):
                 await msg.edit_text("📤 Telegram'ga yuborilmoqda...")
@@ -178,14 +164,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     with open(filepath, 'rb') as audio_file:
                         await query.message.reply_audio(
                             audio=audio_file,
-                            title=track['title'],
-                            performer=track['uploader'],
-                            caption=f"🎵 **{track['title']}**\n🤖 @uztred1bot",
+                            title=title,
+                            performer=artist,
+                            caption=f"🎵 **{artist} - {title}**\n🤖 @uztred1bot",
                             parse_mode="Markdown"
                         )
                     await msg.delete()
                 except Exception as e:
-                    logging.error(f"Yuborishda xatolik: {e}")
+                    logging.error(f"Audio yuborishda xatolik: {e}")
                     await msg.edit_text("❌ Audioni yuborishda xatolik yuz berdi.")
                 
                 if os.path.exists(filepath):
@@ -193,14 +179,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await msg.edit_text("❌ Musiqani yuklab bo'lmadi.")
         else:
-            await query.message.reply_text("❌ Xatolik yuz berdi, qaytadan qidirib ko'ring.")
+            await query.message.reply_text("❌ Qaytadan izlab ko'ring.")
             
     # LINK TUGMALARI BOSILGANDA (VIDEO / AUDIO)
     elif data.startswith("vid|") or data.startswith("aud|"):
         mode_key, url = data.split("|", 1)
         mode = 'audio' if mode_key == 'aud' else 'video'
         
-        await query.edit_message_text("📥 Fayl yuklanmoqda, kuting...")
+        await query.edit_message_text("📥 Fayl yuklanmoqda, iltimos kuting...")
         
         if not os.path.exists("downloads"):
             os.makedirs("downloads")
