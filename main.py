@@ -6,7 +6,8 @@ import yt_dlp
 
 # Loglarni sozlash
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
+    level=logging.INFO
 )
 
 TOKEN = os.environ.get("TOKEN", "8842256743:AAEkul6BCTC0HtrGqfZ47gRAk2JkeogEgdY")
@@ -18,7 +19,11 @@ def get_downloader_opts(mode, output_path):
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
-        # Blokirovkadan qochish uchun universal brauzer sarlavhalari
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['ios', 'android', 'mweb']
+            }
+        },
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -36,7 +41,6 @@ def get_downloader_opts(mode, output_path):
             }],
         })
     else:
-        # Telegram 50MB gacha fayl ko'targani uchun eng yaxshi lekin siqilgan formatni oladi
         ydl_opts.update({
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         })
@@ -46,19 +50,18 @@ def get_downloader_opts(mode, output_path):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🌟 **Universal Yuklovchi Botga xush kelibsiz!**\n\n"
-        "Menga YouTube, Instagram, TikTok yoki boshqa platformalardan video havolasini (link) yuboring. "
-        "Men uni sizga video yoki MP3 formatida yuklab beraman!",
+        "Menga **Instagram, TikTok, YouTube** va boshqa manbalardan video havolasini (link) yuboring. "
+        "Men uni sizga Video yoki MP3 formatida yuklab beraman!",
         parse_mode="Markdown"
     )
 
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text
+    url = update.message.text.strip()
     
     if not (url.startswith("http://") or url.startswith("https://")):
         await update.message.reply_text("❌ Iltimos, faqat to‘g‘ri video havolasini (link) yuboring.")
         return
 
-    # Tugmalarni yaratish
     keyboard = [
         [
             InlineKeyboardButton("🎬 Video (MP4)", callback_data=f"vid|{url}"),
@@ -74,12 +77,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     data = query.data.split("|", 1)
-    mode_key = data[0]  # 'vid' yoki 'aud'
+    mode_key = data[0]
     url = data[1]
     
     mode = 'audio' if mode_key == 'aud' else 'video'
     
-    await query.edit_message_text("📥 Fayl serverga yuklanmoqda, kuting...")
+    await query.edit_message_text("📥 Fayl yuklanmoqda, iltimos kuting...")
     
     output_dir = "downloads"
     if not os.path.exists(output_dir):
@@ -96,7 +99,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 base, _ = os.path.splitext(filename)
                 final_file = base + ".mp3"
             else:
-                # Agar video mp4 bo'lmasa yoki format o'zgargan bo'lsa tekshiramiz
                 final_file = filename if os.path.exists(filename) else None
                 if not final_file:
                     base, _ = os.path.splitext(filename)
@@ -106,7 +108,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             break
 
             if final_file and os.path.exists(final_file):
-                await query.edit_message_text("📤 Telegram'ga jo‘natilmoqda...")
+                await query.edit_message_text("📤 Telegram'ga yuborilmoqda...")
                 
                 with open(final_file, 'rb') as f:
                     if mode == 'audio':
@@ -117,11 +119,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.delete()
                 os.remove(final_file)
             else:
-                await query.edit_message_text("❌ Fayl topilmadi yoki yuklashda xatolik yuz berdi.")
+                await query.edit_message_text("❌ Fayl topilmadi yoki yuklab bo'lmadi.")
                 
     except Exception as e:
         logging.error(f"Xatolik: {e}")
-        await query.edit_message_text("❌ Ushbu linkni yuklab bo‘lmadi. Havola to‘g‘riligini yoki video yopiq emasligini tekshiring.")
+        await query.edit_message_text("❌ Ushbu linkni yuklab bo‘lmadi. Boshqa link (masalan Instagram yoki TikTok) yuborib ko'ring.")
 
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
@@ -132,4 +134,5 @@ if __name__ == '__main__':
 
     print("Bot muvaffaqiyatli ishga tushdi!")
     app.run_polling()
-    
+        
+
