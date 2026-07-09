@@ -23,8 +23,21 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     web_app.run(host='0.0.0.0', port=port)
 
+def clean_url(url):
+    """Linkdagi ortiqcha tracking parametrlarni (?si=...) olib tashlash"""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        # youtu.be linklarini to'g'rilash
+        if 'youtu.be' in parsed.netloc:
+            video_id = parsed.path.strip('/')
+            return f"https://www.youtube.com/watch?v={video_id}"
+        clean = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', ''))
+        return clean if clean else url
+    except Exception:
+        return url
+
 def search_deezer_list(query):
-    """Musiqalarni aniq va tezkor topish"""
+    """Deezer orqali musiqalarni aniq qidirish"""
     try:
         encoded_query = urllib.parse.quote(query)
         url = f"https://api.deezer.com/search?q={encoded_query}&limit=10"
@@ -33,11 +46,11 @@ def search_deezer_list(query):
             data = json.loads(response.read().decode())
             return data.get('data', [])
     except Exception as e:
-        logging.error(f"Deezer qidiruv xatosi: {e}")
+        logging.error(f"Deezer error: {e}")
     return []
 
 def get_youtube_link(search_query):
-    """Qo'shiq nomi orqali YouTube'dan to'g'ridan-to'g'ri birinchi linkni topish"""
+    """Musiqa nomi orqali YouTube'dan to'liq linkini topish"""
     try:
         encoded_query = urllib.parse.quote(search_query)
         url = f"https://www.youtube.com/results?search_query={encoded_query}"
@@ -48,27 +61,34 @@ def get_youtube_link(search_query):
             if video_ids:
                 return f"https://www.youtube.com/watch?v={video_ids[0]}"
     except Exception as e:
-        logging.error(f"YouTube link olishda xato: {e}")
+        logging.error(f"YouTube search error: {e}")
     return None
 
 def download_via_cobalt(url, mode='audio'):
-    """Cobalt API orqali aniq havola (URL) orqali to'liq yuklash"""
+    """Cobalt API orqali to'liq MP3 yoki MP4 yuklab olish"""
     try:
+        cleaned_target_url = clean_url(url)
         cobalt_url = 'https://api.cobalt.tools/api/json'
-        payload = json.dumps({
-            'url': url,
+        
+        payload_data = {
+            'url': cleaned_target_url,
             'downloadMode': 'audio' if mode == 'audio' else 'auto',
-            'audioFormat': 'mp3'
-        }).encode('utf-8')
+            'audioFormat': 'mp3',
+            'videoQuality': '720'
+        }
+        
+        payload = json.dumps(payload_data).encode('utf-8')
         
         headers = {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Origin': 'https://cobalt.tools',
+            'Referer': 'https://cobalt.tools/'
         }
         
         req = urllib.request.Request(cobalt_url, data=payload, headers=headers, method='POST')
-        with urllib.request.urlopen(req, timeout=35) as response:
+        with urllib.request.urlopen(req, timeout=40) as response:
             data = json.loads(response.read().decode())
             
             file_url = None
@@ -85,22 +105,35 @@ def download_via_cobalt(url, mode='audio'):
                     f.write(res.read())
                 return filename
     except Exception as e:
-        logging.error(f"Cobalt yuklash xatosi: {e}")
+        logging.error(f"Cobalt download error: {e}")
     return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🎵 **Musiqa va Video yuklovchi bot!**\n\n"
-        "Qo'shiq nomini yozing yoki istalgan linkni (YouTube, TikTok, Instagram) yuboring.", 
+        "• Qo'shiq nomini yozing — to'liq MP3 qilib beraman.\n"
+        "• YouTube, TikTok, Instagram linkini yuboring — MP3 yoki MP4 shaklida yuklab beraman.", 
         parse_mode="Markdown"
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
-    if text.startswith("http://") or text.startswith("https://"):
-        keyboard = [[InlineKeyboardButton("🎬 Video (MP4)", callback_data=f"vid|{text}"), InlineKeyboardButton("🎵 Audio (MP3)", callback_data=f"aud|{text}")]]
+    # AGAR LINK YUBORILSA
+    if "http://" in text or "https://" in text:
+        # Linkni matn ichidan ajratib olish
+        urls = re.findall(r'https?://[^\s]+', text)
+        target_url = urls[0] if urls else text
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("🎬 Video (MP4)", callback_data=f"vid|{target_url}"), 
+                InlineKeyboardButton("🎵 Audio (MP3)", callback_data=f"aud|{target_url}")
+            ]
+        ]
         await update.message.reply_text("Formatni tanlang:", reply_markup=InlineKeyboardMarkup(keyboard))
+    
+    # AGAR QO'SHIQ NOMI YOZILSA
     else:
         status_msg = await update.message.reply_text(f"🔍 \"{text}\" qidirilmoqda...")
         tracks = search_deezer_list(text)
@@ -144,19 +177,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             title = track.get('title', 'Musiqa')
             
             msg = await query.message.reply_text(f"📥 **{artist} - {title}** (To'liq versiya) yuklanmoqda...")
-            
             if not os.path.exists("downloads"):
                 os.makedirs("downloads")
             
-            # 1. YouTube'dan to'liq linkini qidirib topamiz
             yt_link = get_youtube_link(f"{artist} {title} audio")
             filepath = None
             
-            # 2. Agar YouTube link topilsa, Cobalt orqali yuklaymiz
             if yt_link:
                 filepath = download_via_cobalt(yt_link, mode='audio')
                 
-            # 3. Zaxira: Agar Cobalt yuklay olmasa, Deezer preview (30s) yuklanadi
             is_preview = False
             if not filepath or not os.path.exists(filepath):
                 mp3_url = track.get('preview')
@@ -230,4 +259,4 @@ if __name__ == '__main__':
 
     print("Bot muvaffaqiyatli ishga tushdi!")
     app.run_polling()
-        
+                                    
