@@ -10,28 +10,28 @@ from threading import Thread
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Tokenni olish
+# Tokenni yuklash
 TOKEN = os.getenv("BOT_TOKEN", "8842256743:AAEkul6BCTC0HtrGqfZ47gRAk2JkeogEgdY")
 
-# Flask (Render 24/7 ishlashi uchun)
+# Flask server (Render oʻchib qolmasligi uchun)
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot ishlamoqda!"
+    return "Bot muvaffaqiyatli ishlamoqda!"
 
 def run():
     app.run(host='0.0.0.0', port=8080)
 
-# Bot buyruqlari
+# /start buyrugʻi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Salom! Menga qoʻshiq nomini yoki ijrochini yozing, men sizga musiqani topib beraman. 🎵")
+    await update.message.reply_text("🎵 Salom! Menga qoʻshiq nomini yoki ijrochini yozing, men sizga musiqani topib beraman.")
 
+# Musiqa qidirish (Deezer API)
 async def search_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text
     await update.message.reply_text("🔍 Musiqa qidirilmoqda, iltimos kuting...")
     
-    # Deezer API orqali qidirish
     url = f"https://api.deezer.com/search?q={query}&limit=5"
     try:
         response = requests.get(url).json()
@@ -42,7 +42,7 @@ async def search_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         keyboard = []
-        text = "Musiqani tanlang:\n\n"
+        text = "🎵 Qoʻshiqni tanlang:\n\n"
         
         for idx, track in enumerate(data, 1):
             title = track.get('title')
@@ -56,26 +56,25 @@ async def search_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=reply_markup)
         
     except Exception as e:
-        logger.error(f"Qidiruvda xatolik: {e}")
-        await update.message.reply_text("❌ Qidiruv tizimida xatolik yuz berdi.")
+        logger.error(f"Qidiruv xatosi: {e}")
+        await update.message.reply_text("❌ Tizimda xatolik yuz berdi. Qaytadan urinib koʻring.")
 
+# Musiqani yuklash va yuborish
 async def download_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     track_id = query.data.split('_')[1]
-    await query.message.reply_text("📥 Musiqa yuklab olinmoqda, bir oz kuting...")
+    await query.message.reply_text("📥 Musiqa yuklab olinmoqda...")
     
-    # Deezer hujjati orqali trek ma'lumotlarini olish
     track_url = f"https://api.deezer.com/track/{track_id}"
     try:
         track_data = requests.get(track_url).json()
-        preview_url = track_data.get('preview') # To'g'ridan-to'g'ri audio havola
+        preview_url = track_data.get('preview')
         title = track_data.get('title')
         artist = track_data.get('artist', {}).get('name')
         
         if preview_url:
-            # Audioni Telegram'ga yuborish
             await context.bot.send_audio(
                 chat_id=query.message.chat_id,
                 audio=preview_url,
@@ -83,17 +82,17 @@ async def download_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 performer=artist
             )
         else:
-            await query.message.reply_text("❌ Afsuski, ushbu musiqani yuklash imkoni boʻlmadi.")
+            await query.message.reply_text("❌ Bu musiqani yuklash imkoni boʻlmadi.")
             
     except Exception as e:
-        logger.error(f"Yuklashda xatolik: {e}")
-        await query.message.reply_text("❌ Musiqani yuklashda xatolik yuz berdi.")
+        logger.error(f"Yuklash xatosi: {e}")
+        await query.message.reply_text("❌ Yuklashda xatolik yuz berdi.")
 
 def main():
-    # Flask'ni alohida potokda ishga tushirish
+    # Flaskni fonda yuritish
     Thread(target=run).start()
     
-    # Telegram Botni ishga tushirish
+    # Bot dasturini yuritish
     application = Application.builder().token(TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
@@ -104,4 +103,4 @@ def main():
 
 if __name__ == '__main__':
     main()
- 
+    
