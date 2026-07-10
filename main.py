@@ -1,4 +1,4 @@
-import os
+ import os
 import json
 import logging
 import re
@@ -19,10 +19,10 @@ web_app = Flask('')
 
 @web_app.route('/')
 def home():
-    return "Bot is running!"
+    return "Bot is running perfectly!"
 
 def run_flask():
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT", 8080))
     web_app.run(host='0.0.0.0', port=port)
 
 def search_deezer_list(query):
@@ -70,9 +70,9 @@ def download_by_text_or_url(target, mode='audio'):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🎵 **Musiqa va Video yuklovchi professional bot!**\n\n"
-        "• Qo'shiq nomini yozing — TO'LIQ variantini topib beraman.\n"
-        "• Har qanday linkni yuboring — audio yoki video qilib yuklab beraman.", 
+        "🎵 **Musiqa va Video yuklovchi bot!**\n\n"
+        "• Qo'shiq nomini yozing — to'liq formatda topib beraman.\n"
+        "• Har qanday YouTube linkini yuboring — audio yoki video qilib yuklayman.", 
         parse_mode="Markdown"
     )
 
@@ -107,8 +107,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
             await status_msg.edit_text(msg_text, reply_markup=InlineKeyboardMarkup([keyboard_row1]), parse_mode="Markdown")
         else:
-            keyboard = [[InlineKeyboardButton("🔍 To'g'ridan-to'g'ri yuklash", callback_data=f"force_dl|{text}")]]
-            await status_msg.edit_text("Natija topilmadi. To'g'ridan-to'g'ri qidirib ko'ramizmi?", reply_markup=InlineKeyboardMarkup(keyboard))
+            # Agar ro'yxat topilmasa, avtomatik ravishda YouTube qidiruviga yuborish
+            msg = await status_msg.edit_text("📥 To'g'ridan-to'g'ri qidirib yuklanmoqda...")
+            filepath = download_by_text_or_url(text, mode='audio')
+            if filepath and os.path.exists(filepath):
+                try:
+                    with open(filepath, 'rb') as f:
+                        await update.message.reply_audio(audio=f, caption=f"🎵 {text}\n🤖 @uztred1bot")
+                    await msg.delete()
+                except:
+                    await msg.edit_text("❌ Yuborishda xatolik.")
+                os.remove(filepath)
+            else:
+                await msg.edit_text("❌ Hech narsa topilmadi.")
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -128,7 +139,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             filepath = download_by_text_or_url(f"{artist} {title}", mode='audio')
             
             if filepath and os.path.exists(filepath):
-                await msg.edit_text("📤 Telegram'ga yuborilmoqda...")
                 try:
                     with open(filepath, 'rb') as audio_file:
                         await query.message.reply_audio(audio=audio_file, title=title, performer=artist, caption=f"🎵 {artist} - {title}\n🤖 @uztred1bot")
@@ -137,32 +147,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await msg.edit_text("❌ Yuborishda xatolik.")
                 os.remove(filepath)
             else:
-                await msg.edit_text("❌ Musiqani yuklab bo'lmadi.")
-                
-    elif data.startswith("force_dl|"):
-        search_query = data.split("|")[1]
-        msg = await query.message.reply_text(f"📥 **{search_query}** yuklanmoqda...")
-        filepath = download_by_text_or_url(search_query, mode='audio')
-        
-        if filepath and os.path.exists(filepath):
-            try:
-                with open(filepath, 'rb') as audio_file:
-                    await query.message.reply_audio(audio=audio_file, caption=f"🎵 {search_query}\n🤖 @uztred1bot")
-                await msg.delete()
-            except Exception as e:
-                await msg.edit_text("❌ Yuborishda xatolik.")
-            os.remove(filepath)
-        else:
-            await msg.edit_text("❌ Hech narsa topilmadi.")
+                await msg.edit_text("❌ Musiqani to'liq versiyasini yuklab bo'lmadi.")
 
     elif data.startswith("vid|") or data.startswith("aud|"):
         mode_key, url = data.split("|", 1)
         mode = 'audio' if mode_key == 'aud' else 'video'
-        msg = await query.message.reply_text("📥 Yuklanmoqda (Koyeb'da bu juda tez bajariladi)...")
+        msg = await query.message.reply_text("📥 Yuklanmoqda...")
         
         filepath = download_by_text_or_url(url, mode)
         if filepath and os.path.exists(filepath):
-            await msg.edit_text("📤 Telegram'ga yuborilmoqda...")
             try:
                 with open(filepath, 'rb') as f:
                     if mode == 'audio':
@@ -183,3 +176,4 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
     app.add_handler(CallbackQueryHandler(button_callback))
     app.run_polling()
+        
