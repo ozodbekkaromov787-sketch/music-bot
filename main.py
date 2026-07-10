@@ -26,47 +26,61 @@ def run_flask():
     web_app.run(host='0.0.0.0', port=port)
 
 def search_deezer_list(query):
-    """Faqat ro'yxatni chiroyli ko'rsatish uchun Deezer qidiruvi"""
     try:
         encoded_query = urllib.parse.quote(query)
         url = f"https://api.deezer.com/search?q={encoded_query}&limit=10"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
         with urllib.request.urlopen(req, timeout=10) as response:
             data = json.loads(response.read().decode())
             return data.get('data', [])
     except Exception as e:
-        logging.error(f"Deezer error: {e}")
+        logging.error(f"Deezer xatosi: {e}")
     return []
 
 def download_by_text_or_url(target, mode='audio'):
-    """yt-dlp orqali linkni ham, shunchaki matnli qidiruvni ham TO'LIQ yuklash"""
+    """Render serverlaridagi YouTube blokirovkasini aylanib o'tuvchi funksiya"""
     if not os.path.exists("downloads"):
         os.makedirs("downloads")
         
     unique_id = os.urandom(4).hex()
     
-    # Agar target link bo'lmasa, uni YouTube qidiruviga aylantiramiz
+    # Agar link bo'lmasa, YouTube qidiruv formatiga keltiramiz
     if not target.startswith("http://") and not target.startswith("https://"):
-        search_target = f"ytsearch1:{target} audio"
+        search_target = f"ytsearch1:{target}"
     else:
         search_target = target
 
+    # YouTube blokirovkasini chetlab o'tish uchun eng kuchli sozlamalar (Spoofing)
+    ydl_opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'noplaylist': True,
+        'geo_bypass': True,
+        'source_address': '0.0.0.0',
+        # YouTube bloklamasligi uchun o'zini Android va iOS ilova kabi ko'rsatish:
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios', 'web'],
+                'skip': ['webpage']
+            }
+        },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+        }
+    }
+
     if mode == 'audio':
-        ydl_opts = {
+        ydl_opts.update({
             'format': 'bestaudio[ext=m4a]/bestaudio/best',
             'outtmpl': f'downloads/media_{unique_id}.%(ext)s',
-            'quiet': True,
-            'no_warnings': True,
-            'noplaylist': True
-        }
+        })
     else:
-        ydl_opts = {
+        ydl_opts.update({
             'format': 'best[ext=mp4]/best',
             'outtmpl': f'downloads/media_{unique_id}.mp4',
-            'quiet': True,
-            'no_warnings': True,
-            'noplaylist': True
-        }
+        })
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -81,9 +95,9 @@ def download_by_text_or_url(target, mode='audio'):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🎵 **Musiqa va Video yuklovchi professional bot!**\n\n"
-        "• Qo'shiq nomini yozing — TO'LIQ variantini topib beraman.\n"
-        "• Har qanday linkni yuboring — audio yoki video qilib yuklab beraman.", 
+        "🎵 **Musiqa va Video yuklovchi bot!**\n\n"
+        "• Qo'shiq nomini yozing — TO'LIQ versiyasini qidiraman.\n"
+        "• YouTube link yuboring — audio yoki video qilib yuklab beraman.", 
         parse_mode="Markdown"
     )
 
@@ -97,7 +111,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [
                 InlineKeyboardButton("🎬 Video (MP4)", callback_data=f"vid|{target_url}"), 
-                InlineKeyboardButton("🎵 Audio", callback_data=f"aud|{target_url}")
+                InlineKeyboardButton("🎵 Audio (MP3/M4A)", callback_data=f"aud|{target_url}")
             ]
         ]
         await update.message.reply_text("Formatni tanlang:", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -127,9 +141,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
             await status_msg.edit_text(msg_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         else:
-            # Agar Deezer ro'yxat topa olmasa, to'g'ridan-to'g'ri yozilgan matn bo'yicha qidirib yuklab olish tugmasi
-            keyboard = [[InlineKeyboardButton("🔍 To'g'ridan-to'g'ri yuklash", callback_data=f"force_dl|{text}")]]
-            await status_msg.edit_text("⚠️ Ro'yxat topilmadi. Quyidagi tugma orqali qidirib ko'ring:", reply_markup=InlineKeyboardMarkup(keyboard))
+            keyboard = [[InlineKeyboardButton("🔍 To'g'ridan-to'g'ri qidirib yuklash", callback_data=f"force_dl|{text}")]]
+            await status_msg.edit_text("⚠️ Ro'yxat topilmadi. Quyidagi tugma orqali to'g'ridan-to'g'ri yuklab ko'ring:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -145,14 +158,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             artist = track.get('artist', {}).get('name', 'Noma\'lum')
             title = track.get('title', 'Musiqa')
             
-            msg = await query.message.reply_text(f"📥 **{artist} - {title}** (To'liq versiya) qidirilmoqda va yuklanmoqda...")
+            msg = await query.message.reply_text(f"📥 **{artist} - {title}** (To'liq versiya) yuklanmoqda...")
             
-            # Endi 29 soniyalik linkni emas, to'g'ridan-to'g'ri nomi bo'yicha to'liq audioni qidiramiz
+            # YouTube-dan to'liq variantini qidiramiz (blokirovka aylanib o'tilgan sozlamalar bilan)
             search_query = f"{artist} {title}"
             filepath = download_by_text_or_url(search_query, mode='audio')
             
-            # Agar to'liq variant o'xshamasa, oxirgi chora sifatida preview yuklaydi
             is_preview = False
+            # Agar YouTube mutloq bloklagan bo'lsa, oxirgi chora sifatida preview yuboradi
             if not filepath or not os.path.exists(filepath):
                 mp3_url = track.get('preview')
                 if mp3_url:
@@ -179,7 +192,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         )
                     await msg.delete()
                 except Exception as e:
-                    logging.error(f"Yuborishda xato: {e}")
                     await msg.edit_text("❌ Audioni yuborishda xatolik yuz berdi.")
                 if os.path.exists(filepath):
                     os.remove(filepath)
@@ -201,29 +213,29 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if os.path.exists(filepath):
                 os.remove(filepath)
         else:
-            await msg.edit_text("❌ Topilmadi.")
+            await msg.edit_text("❌ Hech narsa topilmadi.")
 
     elif data.startswith("vid|") or data.startswith("aud|"):
         mode_key, url = data.split("|", 1)
         mode = 'audio' if mode_key == 'aud' else 'video'
-        await query.edit_message_text("📥 Havola yuklanmoqda...")
+        msg = await query.message.reply_text("📥 Havola tahlil qilinmoqda va yuklanmoqda...")
         
         filepath = download_by_text_or_url(url, mode)
         if filepath and os.path.exists(filepath):
-            await query.message.reply_text("📤 Telegram'ga yuborilmoqda...")
+            await msg.edit_text("📤 Telegram'ga yuborilmoqda...")
             try:
                 with open(filepath, 'rb') as f:
                     if mode == 'audio':
                         await query.message.reply_audio(audio=f, caption="🤖 @uztred1bot")
                     else:
                         await query.message.reply_video(video=f, caption="🤖 @uztred1bot")
-                await query.message.delete()
+                await msg.delete()
             except Exception as e:
-                await query.edit_message_text("❌ Faylni yuborishda xatolik.")
+                await msg.edit_text("❌ Faylni yuborishda xatolik.")
             if os.path.exists(filepath):
                 os.remove(filepath)
         else:
-            await query.edit_message_text("❌ Afsuski, yuklab olish imkoni bo'lmadi.")
+            await msg.edit_text("❌ Afsuski, ushbu linkdan yuklab olish imkoni bo'lmadi. YouTube bloklamoqda.")
 
 if __name__ == '__main__':
     if not os.path.exists("downloads"):
@@ -234,8 +246,8 @@ if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(CallbackQueryHandler(button_button_callback if 'button_button_callback' in locals() else button_callback))
 
     print("Bot muvaffaqiyatli ishga tushdi!")
     app.run_polling()
-            
+        
