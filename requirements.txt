@@ -1,6 +1,5 @@
-python-telegram-bot==21.3
-Flask==3.0.3
-yt-dlp>=2025.01.01
+requests
+
 
 
 
