@@ -6,6 +6,7 @@ import urllib.request
 import urllib.parse
 from threading import Thread
 from flask import Flask
+import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
@@ -23,21 +24,8 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     web_app.run(host='0.0.0.0', port=port)
 
-def clean_url(url):
-    """Linkdagi ortiqcha tracking parametrlarni (?si=...) olib tashlash"""
-    try:
-        parsed = urllib.parse.urlparse(url)
-        # youtu.be linklarini to'g'rilash
-        if 'youtu.be' in parsed.netloc:
-            video_id = parsed.path.strip('/')
-            return f"https://www.youtube.com/watch?v={video_id}"
-        clean = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', ''))
-        return clean if clean else url
-    except Exception:
-        return url
-
 def search_deezer_list(query):
-    """Deezer orqali musiqalarni aniq qidirish"""
+    """Deezer orqali musiqalarni qidirish"""
     try:
         encoded_query = urllib.parse.quote(query)
         url = f"https://api.deezer.com/search?q={encoded_query}&limit=10"
@@ -64,64 +52,56 @@ def get_youtube_link(search_query):
         logging.error(f"YouTube search error: {e}")
     return None
 
-def download_via_cobalt(url, mode='audio'):
-    """Cobalt API orqali to'liq MP3 yoki MP4 yuklab olish"""
+def download_via_ytdlp(url, mode='audio'):
+    """yt-dlp orqali linkdan to'g'ridan-to'g'ri va xatolarsiz yuklab olish"""
+    if not os.path.exists("downloads"):
+        os.makedirs("downloads")
+        
+    unique_id = os.urandom(4).hex()
+    
+    if mode == 'audio':
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': f'downloads/media_{unique_id}.%(ext)s',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'quiet': True,
+            'no_warnings': True
+        }
+        expected_file = f"downloads/media_{unique_id}.mp3"
+    else:
+        ydl_opts = {
+            'format': 'best[ext=mp4]/best',
+            'outtmpl': f'downloads/media_{unique_id}.mp4',
+            'quiet': True,
+            'no_warnings': True
+        }
+        expected_file = f"downloads/media_{unique_id}.mp4"
+
     try:
-        cleaned_target_url = clean_url(url)
-        cobalt_url = 'https://api.cobalt.tools/api/json'
-        
-        payload_data = {
-            'url': cleaned_target_url,
-            'downloadMode': 'audio' if mode == 'audio' else 'auto',
-            'audioFormat': 'mp3',
-            'videoQuality': '720'
-        }
-        
-        payload = json.dumps(payload_data).encode('utf-8')
-        
-        headers = {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Origin': 'https://cobalt.tools',
-            'Referer': 'https://cobalt.tools/'
-        }
-        
-        req = urllib.request.Request(cobalt_url, data=payload, headers=headers, method='POST')
-        with urllib.request.urlopen(req, timeout=40) as response:
-            data = json.loads(response.read().decode())
-            
-            file_url = None
-            if data.get('status') in ['redirect', 'stream']:
-                file_url = data.get('url')
-            elif data.get('status') == 'picker' and data.get('picker'):
-                file_url = data['picker'][0].get('url')
-                
-            if file_url:
-                ext = 'mp3' if mode == 'audio' else 'mp4'
-                filename = f"downloads/media_{os.urandom(4).hex()}.{ext}"
-                file_req = urllib.request.Request(file_url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(file_req, timeout=120) as res, open(filename, 'wb') as f:
-                    f.write(res.read())
-                return filename
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        if os.path.exists(expected_file):
+            return expected_file
     except Exception as e:
-        logging.error(f"Cobalt download error: {e}")
+        logging.error(f"yt-dlp yuklash xatosi: {e}")
     return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🎵 **Musiqa va Video yuklovchi bot!**\n\n"
-        "• Qo'shiq nomini yozing — to'liq MP3 qilib beraman.\n"
-        "• YouTube, TikTok, Instagram linkini yuboring — MP3 yoki MP4 shaklida yuklab beraman.", 
+        "🎵 **Musiqa va Video yuklovchi professional bot!**\n\n"
+        "• Qo'shiq nomini yozing — to'liq MP3 variantini topib beraman.\n"
+        "• Har qanday linkni yuboring — MP3 yoki MP4 qilib yuklab beraman.", 
         parse_mode="Markdown"
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
-    # AGAR LINK YUBORILSA
     if "http://" in text or "https://" in text:
-        # Linkni matn ichidan ajratib olish
         urls = re.findall(r'https?://[^\s]+', text)
         target_url = urls[0] if urls else text
         
@@ -132,8 +112,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         ]
         await update.message.reply_text("Formatni tanlang:", reply_markup=InlineKeyboardMarkup(keyboard))
-    
-    # AGAR QO'SHIQ NOMI YOZILSA
     else:
         status_msg = await update.message.reply_text(f"🔍 \"{text}\" qidirilmoqda...")
         tracks = search_deezer_list(text)
@@ -177,14 +155,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             title = track.get('title', 'Musiqa')
             
             msg = await query.message.reply_text(f"📥 **{artist} - {title}** (To'liq versiya) yuklanmoqda...")
-            if not os.path.exists("downloads"):
-                os.makedirs("downloads")
             
             yt_link = get_youtube_link(f"{artist} {title} audio")
             filepath = None
             
             if yt_link:
-                filepath = download_via_cobalt(yt_link, mode='audio')
+                filepath = download_via_ytdlp(yt_link, mode='audio')
                 
             is_preview = False
             if not filepath or not os.path.exists(filepath):
@@ -223,14 +199,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("vid|") or data.startswith("aud|"):
         mode_key, url = data.split("|", 1)
         mode = 'audio' if mode_key == 'aud' else 'video'
-        await query.edit_message_text("📥 Havola yuklanmoqda...")
+        await query.edit_message_text("📥 Havola serverga yuklanmoqda (Bu biroz vaqt olishi mumkin)...")
         
-        if not os.path.exists("downloads"):
-            os.makedirs("downloads")
-            
-        filepath = download_via_cobalt(url, mode)
+        filepath = download_via_ytdlp(url, mode)
         if filepath and os.path.exists(filepath):
-            await query.edit_message_text("📤 Telegram'ga yuborilmoqda...")
+            await query.message.reply_text("📤 Telegram'ga yuborilmoqda...")
             try:
                 with open(filepath, 'rb') as f:
                     if mode == 'audio':
@@ -239,12 +212,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await query.message.reply_video(video=f, caption="🤖 @uztred1bot")
                 await query.message.delete()
             except Exception as e:
-                logging.error(f"Link yuborishda xato: {e}")
+                logging.error(f"Yuborishda xato: {e}")
                 await query.edit_message_text("❌ Faylni yuborishda xatolik.")
             if os.path.exists(filepath):
                 os.remove(filepath)
         else:
-            await query.edit_message_text("❌ Link orqali yuklab bo'lmadi.")
+            await query.edit_message_text("❌ Afsuski, ushbu linkdan yuklab olish imkoni bo'lmadi.")
 
 if __name__ == '__main__':
     if not os.path.exists("downloads"):
@@ -259,4 +232,4 @@ if __name__ == '__main__':
 
     print("Bot muvaffaqiyatli ishga tushdi!")
     app.run_polling()
-                                    
+        
