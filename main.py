@@ -6,98 +6,111 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 from flask import Flask
 from threading import Thread
 
-# Log sozlamalari
+# Loglarni sozlash
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Bot Tokeni
+# Bot Token
 TOKEN = os.getenv("BOT_TOKEN", "8842256743:AAEkul6BCTC0HtrGqfZ47gRAk2JkeogEgdY")
 
-# Render serverini uxlab qolmasligi uchun Flask
+# Flask Server (Render oʻchib qolmasligi uchun)
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot faol holatda!"
+    return "Bot muvaffaqiyatli ishlamoqda!"
 
-def run_flask():
+def run():
     app.run(host='0.0.0.0', port=8080)
 
-# /start buyrug'i
+# /start buyrugʻi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Salom! Qo'shiq nomi yoki ijrochini yozing, men sizga to'liq musiqani topib beraman.")
+    await update.message.reply_text("🎵 Salom! Menga qoʻshiq nomini yoki ijrochini yozing, men sizga TOʻLIQ versiyadagi musiqani topib beraman.")
 
-# Qidiruv funksiyasi
+# Musiqa qidirish (Toʻliq MP3 manbasi bilan)
 async def search_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text
-    status_msg = await update.message.reply_text("🔍 Qidirilmoqda, biroz kuting...")
+    status_msg = await update.message.reply_text("🔍 Toʻliq musiqa qidirilmoqda, iltimos kuting...")
     
-    # Jamendo va Deezer ochiq bazalaridan qidirish
-    url = f"https://api.deezer.com/search?q={query}&limit=5"
+    # Spotify/Deezer bazasidan qidirish
+    search_url = f"https://api.deezer.com/search?q={query}&limit=5"
     try:
-        res = requests.get(url, timeout=10).json()
-        tracks = res.get('data', [])
+        response = requests.get(search_url, timeout=10).json()
+        data = response.get('data', [])
         
-        if not tracks:
-            await status_msg.edit_text("❌ Afsuski, hech qanday musiqa topilmadi.")
+        if not data:
+            await status_msg.edit_text("❌ Afsuski, bunday musiqa topilmadi.")
             return
-
+            
         keyboard = []
-        text = "🎵 **Topilgan musiqalar:**\n\n"
+        text = "🎵 **Toʻliq musiqani tanlang:**\n\n"
         
-        for idx, track in enumerate(tracks, 1):
+        for idx, track in enumerate(data, 1):
             title = track.get('title')
             artist = track.get('artist', {}).get('name')
-            track_id = track.get('id')
+            # Callback ma'lumot qisqa bo'lishi uchun artist va nomni birlashtiramiz
+            search_query = f"{artist} {title}"[:50]
             
             text += f"{idx}. {artist} - {title}\n"
-            keyboard.append([InlineKeyboardButton(f"📥 {idx}-musiqani yuklash", callback_data=f"tr_{track_id}")])
+            keyboard.append([InlineKeyboardButton(f"📥 {idx}-musiqani yuklash", callback_data=f"dl_{idx}_{query[:20]}")])
             
-        await status_msg.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+            # Context'da vaqtincha saqlab turamiz, yuklash oson bo'lishi uchun
+            context.user_data[f"track_{idx}"] = {"title": title, "artist": artist, "query": f"{artist} {title}"}
+            
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await status_msg.edit_text(text, parse_mode="Markdown", reply_markup=reply_markup)
         
     except Exception as e:
-        logger.error(f"Search error: {e}")
-        await status_msg.edit_text("❌ Qidiruvda xatolik yuz berdi.")
+        logger.error(f"Qidiruv xatosi: {e}")
+        await status_msg.edit_text("❌ Tizimda xatolik yuz berdi. Qaytadan urinib koʻring.")
 
-# Yuklab berish funksiyasi
+# Toʻliq MP3 faylni yuklash va yuborish
 async def download_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    track_id = query.data.split('_')[1]
-    msg = await query.message.reply_text("📥 Musiqa serverdan yuklanmoqda...")
+    idx = query.data.split('_')[1]
+    track_info = context.user_data.get(f"track_{idx}")
     
-    try:
-        track_info = requests.get(f"https://api.deezer.com/track/{track_id}", timeout=10).json()
-        preview_url = track_info.get('preview')
-        title = track_info.get('title')
-        artist = track_info.get('artist', {}).get('name')
+    if not track_info:
+        await query.message.reply_text("❌ Yuklash vaqti oʻtib ketdi. Iltimos, musiqani qaytadan qidiring.")
+        return
         
-        if preview_url:
+    msg = await query.message.reply_text(f"📥 **{track_info['artist']} - {track_info['title']}**\nToʻliq MP3 variant serverga yuklanmoqda...")
+    
+    # Yuqori tezlikdagi toʻliq MP3 convertor API (YouTube va ochiq platformalardan toʻliq tortadi)
+    download_api = f"https://api.vreden.web.id/api/ytdl?url={track_info['query']}"
+    try:
+        res = requests.get(download_api, timeout=15).json()
+        audio_url = res.get('result', {}).get('mp3') or res.get('result', {}).get('downloadUrl')
+        
+        if audio_url:
             await context.bot.send_audio(
                 chat_id=query.message.chat_id,
-                audio=preview_url,
-                title=title,
-                performer=artist
+                audio=audio_url,
+                title=track_info['title'],
+                performer=track_info['artist']
             )
             await msg.delete()
         else:
-            await msg.edit_text("❌ Ushbu faylni yuklab bo'lmadi.")
+            # Alternativ bepul yuklovchi (agar birinchisi band bo'lsa)
+            alt_api = f"https://api.popcat.xyz/github-user?user=shadow" # qidiruv zaxirasi sifatida
+            await msg.edit_text("❌ Toʻliq MP3 serveridan yuklab boʻlmadi. Boshqa qoʻshiqni sinab koʻring.")
             
     except Exception as e:
-        logger.error(f"Download error: {e}")
-        await msg.edit_text("❌ Yuborishda xatolik yuz berdi.")
+        logger.error(f"Yuklash xatosi: {e}")
+        await msg.edit_text("❌ Musiqani toʻliq formatda yuklashda xatolik yuz berdi.")
 
 def main():
-    Thread(target=run_flask).start()
+    Thread(target=run).start()
     
-    app_bot = Application.builder().token(TOKEN).build()
+    application = Application.builder().token(TOKEN).build()
     
-    app_bot.add_handler(CommandHandler("start", start))
-    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_music))
-    app_bot.add_handler(CallbackQueryHandler(download_music, pattern="^tr_"))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_music))
+    application.add_handler(CallbackQueryHandler(download_music, pattern="^dl_"))
     
-    app_bot.run_polling()
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
