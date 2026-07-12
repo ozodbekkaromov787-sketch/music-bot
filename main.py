@@ -2,6 +2,7 @@ import os
 import logging
 import requests
 import yt_dlp
+import imageio_ffmpeg
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from flask import Flask
@@ -69,9 +70,13 @@ async def download_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     filename = f"song_{query.from_user.id}.mp3"
     
+    # imageio_ffmpeg orqali ffmpeg yo'lini topamiz
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': filename,
+        'ffmpeg_location': ffmpeg_exe,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -115,4 +120,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
