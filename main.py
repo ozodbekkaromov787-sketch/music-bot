@@ -7,17 +7,18 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 from flask import Flask
 from threading import Thread
 
+# Loglarni sozlash
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Railway o'zgaruvchisidan tokenni oladi
-TOKEN = os.getenv("8842256743:AAEkul6BCTC0HtrGqfZ47gRAk2JkeogEgdY")
+# Sizning tokeningiz joylandi:
+TOKEN = os.getenv("BOT_TOKEN", "8842256743:AAEkul6BCTC0HtrGqfZ47gRAk2JkeogEgdY")
 
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot Railway'da faol!"
+    return "Bot muvaffaqiyatli ishlamoqda!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
@@ -30,7 +31,7 @@ async def search_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text
     status_msg = await update.message.reply_text("🔍 Musiqa qidirilmoqda...")
     
-    # Deezer qidiruvi faqat chiroyli nom va ijrochi ro'yxatini olish uchun ishlatiladi
+    # Deezer orqali aniq nom va ijrochilarni topamiz
     url = f"https://api.deezer.com/search?q={query}&limit=5"
     try:
         res = requests.get(url, timeout=10).json()
@@ -50,11 +51,10 @@ async def search_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += f"{idx}. **{artist}** - {title}\n"
             keyboard.append([InlineKeyboardButton(f"📥 {idx}-musiqani yuklash", callback_data=f"dl_{idx}")])
             
-            # Bu yerda yuklash uchun faqat qo'shiqchi va nomi YouTube qidiruviga yuboriladi
             context.user_data[f"tr_{idx}"] = {
                 "title": title,
                 "artist": artist,
-                "query": f"{artist} {title} audio"
+                "query": f"{artist} {title}"
             }
             
         await status_msg.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -71,20 +71,20 @@ async def download_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     track_info = context.user_data.get(f"tr_{idx}")
     
     if not track_info:
-        await query.message.reply_text("❌ Seans muddati tugadi. Qaytadan qidirib ko'ring.")
+        await query.message.reply_text("❌ Qaytadan qidirib ko'ring.")
         return
         
-    msg = await query.message.reply_text(f"📥 **{track_info['artist']} - {track_info['title']}**\nTo'liq MP3 formatga o'tkazilmoqda, kuting...")
+    msg = await query.message.reply_text(f"📥 **{track_info['artist']} - {track_info['title']}**\nTo'liq MP3 yuklanmoqda...")
     
     search_q = track_info['query']
-    filename = f"song_{query.from_user.id}"
+    filename = f"song_{query.from_user.id}.mp3"
     
-    # KAFOLATLANGAN TO'LIQ MP3 FORMATI (Railway ffmpeg yordamida yuklaydi)
+    # SoundCloud orqali yuklash (3-5 daqiqalik to'liq MP3)
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': filename,
         'quiet': True,
-        'default_search': 'ytsearch1:',
+        'default_search': 'scsearch1:',
         'noplaylist': True,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
@@ -93,30 +93,27 @@ async def download_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }],
     }
     
-    # ffmpeg ishlov berganidan keyin fayl kengaytmasi .mp3 bo'ladi
-    full_filename = f"{filename}.mp3"
-    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([search_q])
             
-        if os.path.exists(full_filename):
-            with open(full_filename, 'rb') as audio_file:
+        if os.path.exists(filename):
+            with open(filename, 'rb') as audio_file:
                 await context.bot.send_audio(
                     chat_id=query.message.chat_id,
                     audio=audio_file,
                     title=track_info['title'],
                     performer=track_info['artist']
                 )
-            os.remove(full_filename)
+            os.remove(filename)
             await msg.delete()
         else:
-            await msg.edit_text("❌ To'liq MP3 faylini shakllantirishda xatolik yuz berdi.")
+            await msg.edit_text("❌ Faylni saqlashda xatolik bo'ldi.")
             
     except Exception as e:
         logger.error(f"Download error: {e}")
-        if os.path.exists(full_filename):
-            os.remove(full_filename)
+        if os.path.exists(filename):
+            os.remove(filename)
         await msg.edit_text("❌ Yuklashda xatolik yuz berdi. Qaytadan urinib ko'ring.")
 
 def main():
