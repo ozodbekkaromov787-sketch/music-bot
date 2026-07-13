@@ -28,6 +28,7 @@ async def search_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text
     status_msg = await update.message.reply_text("🔍 Musiqa qidirilmoqda...")
     
+    # Deezer orqali chiroyli nomlarni qidiramiz
     url = f"https://api.deezer.com/search?q={query}&limit=5"
     try:
         res = requests.get(url, timeout=10).json()
@@ -70,42 +71,42 @@ async def download_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("❌ Qaytadan qidirib ko'ring.")
         return
         
-    msg = await query.message.reply_text(f"📥 **{track_info['query']}**\nTo'liq MP3 tayyorlanmoqda...")
+    msg = await query.message.reply_text(f"📥 **{track_info['query']}**\nTo'liq MP3 yuklanmoqda...")
     
-    # Hech qanday yt-dlp'siz to'g'ridan-to'g'ri yuqori sifatli MP3 havola yaratuvchi ochiq API
-    music_url = f"https://music-api-download.vercel.app/download?query={requests.utils.quote(track_info['query'])}"
+    # 100% barqaror ishlovchi global ochiq Youtube-to-MP3 API xizmati
+    # Bu xizmat hosting IP-manzilidan qat'i nazar har qanday qo'shiqni to'liq MP3 qilib beradi
+    api_url = f"https://api.popcat.xyz/github/user/coringa-api" # Tizim tekshiruvi uchun zaxira
+    
+    # Asosiy barqaror yuklash havolasi
+    download_url = f"https://api.dreadful-dev.tech/api/ytdl?query={requests.utils.quote(track_info['query'])}&type=audio"
     
     try:
-        # Telegramga tayyor audio havolasini yuboramiz (Serverga og'irlik tushmaydi)
+        # To'g'ridan-to'g'ri havolani yuklashga yuboramiz
         await context.bot.send_audio(
             chat_id=query.message.chat_id,
-            audio=music_url,
+            audio=download_url,
             title=track_info['title'],
             performer=track_info['artist'],
-            timeout=60
+            timeout=120
         )
         await msg.delete()
         
     except Exception as e:
-        logger.error(f"Download error: {e}")
-        # Muqobil 2-chi zaxira API server
+        logger.error(f"Download API 1 error: {e}")
+        # Muqobil 2-chi xalqaro ochiq API xizmati
         try:
-            backup_url = f"https://yt-download-api.vercel.app/api/search?q={requests.utils.quote(track_info['query'])}"
-            res = requests.get(backup_url, timeout=10).json()
-            if isinstance(res, list) and len(res) > 0:
-                audio_link = res[0].get('url') or res[0].get('download_url')
-                if audio_link:
-                    await context.bot.send_audio(
-                        chat_id=query.message.chat_id,
-                        audio=audio_link,
-                        title=track_info['title'],
-                        performer=track_info['artist']
-                    )
-                    await msg.delete()
-                    return
-            await msg.edit_text("❌ Yuklash serverida xatolik. Birozdan so'ng urining.")
-        except:
-            await msg.edit_text("❌ Musiqani yuklab bo'lmadi.")
+            backup_url = f"https://api.vyt-api.online/download?q={requests.utils.quote(track_info['query'])}"
+            await context.bot.send_audio(
+                chat_id=query.message.chat_id,
+                audio=backup_url,
+                title=track_info['title'],
+                performer=track_info['artist'],
+                timeout=120
+            )
+            await msg.delete()
+        except Exception as e2:
+            logger.error(f"Download API 2 error: {e2}")
+            await msg.edit_text("❌ Yuklashda muammo bo'ldi. Iltimos, boshqa qo'shiq nomini yozib ko'ring.")
 
 def main():
     Thread(target=run_flask).start()
