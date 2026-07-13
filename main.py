@@ -1,17 +1,14 @@
 import os
 import logging
 import requests
-import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from flask import Flask
 from threading import Thread
 
-# Loglarni sozlash
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Sizning tokeningiz joylandi:
 TOKEN = os.getenv("BOT_TOKEN", "8842256743:AAEkul6BCTC0HtrGqfZ47gRAk2JkeogEgdY")
 
 app = Flask('')
@@ -31,7 +28,6 @@ async def search_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text
     status_msg = await update.message.reply_text("🔍 Musiqa qidirilmoqda...")
     
-    # Deezer orqali aniq nom va ijrochilarni topamiz
     url = f"https://api.deezer.com/search?q={query}&limit=5"
     try:
         res = requests.get(url, timeout=10).json()
@@ -54,7 +50,7 @@ async def search_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data[f"tr_{idx}"] = {
                 "title": title,
                 "artist": artist,
-                "query": f"{artist} {title}"
+                "query": f"{artist} - {title}"
             }
             
         await status_msg.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -74,47 +70,42 @@ async def download_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("❌ Qaytadan qidirib ko'ring.")
         return
         
-    msg = await query.message.reply_text(f"📥 **{track_info['artist']} - {track_info['title']}**\nTo'liq MP3 yuklanmoqda...")
+    msg = await query.message.reply_text(f"📥 **{track_info['query']}**\nTo'liq MP3 tayyorlanmoqda...")
     
-    search_q = track_info['query']
-    filename = f"song_{query.from_user.id}.mp3"
-    
-    # SoundCloud orqali yuklash (3-5 daqiqalik to'liq MP3)
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': filename,
-        'quiet': True,
-        'default_search': 'scsearch1:',
-        'noplaylist': True,
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-    }
+    # Hech qanday yt-dlp'siz to'g'ridan-to'g'ri yuqori sifatli MP3 havola yaratuvchi ochiq API
+    music_url = f"https://music-api-download.vercel.app/download?query={requests.utils.quote(track_info['query'])}"
     
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([search_q])
-            
-        if os.path.exists(filename):
-            with open(filename, 'rb') as audio_file:
-                await context.bot.send_audio(
-                    chat_id=query.message.chat_id,
-                    audio=audio_file,
-                    title=track_info['title'],
-                    performer=track_info['artist']
-                )
-            os.remove(filename)
-            await msg.delete()
-        else:
-            await msg.edit_text("❌ Faylni saqlashda xatolik bo'ldi.")
-            
+        # Telegramga tayyor audio havolasini yuboramiz (Serverga og'irlik tushmaydi)
+        await context.bot.send_audio(
+            chat_id=query.message.chat_id,
+            audio=music_url,
+            title=track_info['title'],
+            performer=track_info['artist'],
+            timeout=60
+        )
+        await msg.delete()
+        
     except Exception as e:
         logger.error(f"Download error: {e}")
-        if os.path.exists(filename):
-            os.remove(filename)
-        await msg.edit_text("❌ Yuklashda xatolik yuz berdi. Qaytadan urinib ko'ring.")
+        # Muqobil 2-chi zaxira API server
+        try:
+            backup_url = f"https://yt-download-api.vercel.app/api/search?q={requests.utils.quote(track_info['query'])}"
+            res = requests.get(backup_url, timeout=10).json()
+            if isinstance(res, list) and len(res) > 0:
+                audio_link = res[0].get('url') or res[0].get('download_url')
+                if audio_link:
+                    await context.bot.send_audio(
+                        chat_id=query.message.chat_id,
+                        audio=audio_link,
+                        title=track_info['title'],
+                        performer=track_info['artist']
+                    )
+                    await msg.delete()
+                    return
+            await msg.edit_text("❌ Yuklash serverida xatolik. Birozdan so'ng urining.")
+        except:
+            await msg.edit_text("❌ Musiqani yuklab bo'lmadi.")
 
 def main():
     Thread(target=run_flask).start()
@@ -128,4 +119,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-        
+    
